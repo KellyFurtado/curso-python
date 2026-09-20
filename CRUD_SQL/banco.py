@@ -4,6 +4,18 @@ import sqlite3
 
 # ==== FUNÇÕES AUXILIARES ====
 
+def pedir_nome(mensagem):
+    """Solicita um nome válido, aceitando letras e espaços."""
+
+    while True:
+        nome = input(mensagem).strip()
+        nome_sem_espacos = nome.replace(" ", "")
+
+        if nome_sem_espacos.isalpha() and len(nome_sem_espacos) >= 2:
+            return nome
+        else:
+            print("Digite um nome válido (apenas letras e mínimo 2 caracteres).")
+
 def pedir_inteiro(mensagem):
     """Solicita um número inteiro ao usuário, com tratamento de erro."""
     while True:
@@ -13,55 +25,85 @@ def pedir_inteiro(mensagem):
         except ValueError:
             print("Digite apenas números inteiros.")
 
-# ==== CONEXÃO COM O BANCO ====
-conexao = sqlite3.connect("cadastro.db")
-conexao.row_factory = sqlite3.Row
-cursor = conexao.cursor()
+def inserir_pessoa(nome, idade, cursor, conexao):
+    """Insere uma pessoa no banco de dados."""
+    cursor.execute("INSERT INTO pessoas(nome, idade) VALUES(?, ?)", (nome, idade))
+    conexao.commit()
+    return cursor.lastrowid
+
+def atualizar_pessoa(cursor, conexao, pessoa_id, nome, idade):
+    """Atualiza o nome e/ou a idade de uma pessoa no banco de dados pelo ID."""
+
+    if nome is not None and idade is None:
+        cursor.execute("UPDATE pessoas SET nome = ? WHERE id = ?", (nome, pessoa_id))
+    elif nome is None and idade is not None:
+        cursor.execute("UPDATE pessoas SET idade = ? WHERE id = ?", (idade, pessoa_id))
+    elif nome is not None and idade is not None:
+        cursor.execute("UPDATE pessoas SET nome = ?, idade = ? WHERE id = ?", (nome, idade, pessoa_id))
+    conexao.commit()
+    return cursor.rowcount
+
+def buscar_pessoas(cursor):
+    """Busca todas as pessoas cadastradas no banco."""
+    cursor.execute("SELECT * FROM pessoas")
+    return cursor.fetchall()
+
+def buscar_pessoa_por_id(cursor, id_digitado):
+    """Busca uma pessoa pelo ID no banco de dados."""
+    cursor.execute("SELECT * FROM pessoas WHERE id = ?", (id_digitado,))
+    return cursor.fetchone()
+
+def remover_pessoa(cursor, conexao, id_pessoa):
+    """Remove uma pessoa do banco de dados pelo ID."""
+    cursor.execute("DELETE FROM pessoas WHERE id = ?", (id_pessoa,))
+    conexao.commit()
+    return cursor.rowcount
 
 # ==== FUNÇÕES DO SISTEMA ====
 
-def criar_tabela():
+def criar_tabela(cursor, conexao):
     """Cria a tabela 'pessoas' se não existir."""
     cursor.execute("CREATE TABLE IF NOT EXISTS pessoas( id INTEGER PRIMARY KEY, nome TEXT, idade INTEGER)")
     conexao.commit()
 
-def cadastrar_pessoa():
+def cadastrar_pessoa(cursor, conexao):
     """Cadastra uma nova pessoa no banco de dados."""
-    nome = input("Digite um nome: ")
+    nome = pedir_nome("Digite o novo nome: ").title()
     idade = pedir_inteiro("Digite a idade: ")
-    cursor.execute("INSERT INTO pessoas(nome, idade) VALUES(?, ?)", (nome, idade))
-    conexao.commit()
-    print("Pessoa cadastrada com sucesso! ID:", cursor.lastrowid)
+    pessoa_id = inserir_pessoa(nome, idade, cursor, conexao)
+    print("Pessoa cadastrada com sucesso! ID:", pessoa_id)
 
-def listar_pessoas():
+def listar_pessoas(cursor):
     """Lista todas as pessoas cadastradas."""
-    cursor.execute("SELECT * FROM pessoas")
-    resultado = cursor.fetchall()
-    for pessoa in resultado:
-        print(f"ID: {pessoa['id']} | Nome: {pessoa['nome']} | Idade: {pessoa['idade']}")
+    resultado = buscar_pessoas(cursor)
+    if resultado:
+        for pessoa in resultado:
+            print(f"ID: {pessoa['id']} | Nome: {pessoa['nome']} | Idade: {pessoa['idade']}")
+    else:
+        print("Nenhuma pessoa cadastrada.")
 
-def pesquisar_pessoa():
+def pesquisar_pessoa(cursor):
     """Pesquisa pessoa pelo ID informado."""
     while True:
         id_digitado = pedir_inteiro("Digite o ID que deseja pesquisar: ")
-        cursor.execute("SELECT * FROM pessoas WHERE id = ?", (id_digitado,))
-        resultado = cursor.fetchone()
+        resultado = buscar_pessoa_por_id(cursor, id_digitado)
         if resultado is not None:
             print(f"ID: {resultado['id']} | Nome: {resultado['nome']} | Idade: {resultado['idade']}")
             break
         else:
             print("Este ID não consta em nosso cadastro. Tente novamente.")
 
-def editar_pessoa():
+def editar_pessoa(cursor, conexao):
     """Edita nome e/ou idade de uma pessoa cadastrada."""
-
-    # === Entrada do ID ===
     id_pessoa = pedir_inteiro("Digite o ID que deseja editar: ")
-    cursor.execute("SELECT * FROM pessoas WHERE id = ?", (id_pessoa,))
-    resultado = cursor.fetchone()
+    resultado = buscar_pessoa_por_id(cursor, id_pessoa)
 
     if resultado is not None:
         print(f"ID: {resultado['id']} | Nome: {resultado['nome']} | Idade: {resultado['idade']}")
+
+        nome = None
+        idade = None
+
         print("\n==== MENU ====")
         print("1 - Nome")
         print("2 - Idade")
@@ -69,53 +111,43 @@ def editar_pessoa():
 
         opcao = input("Escolha uma opção: ")
 
-        # === Alteração do nome ===
         if opcao == "1":
-            novo_nome = input("Digite o novo nome: ")
-            cursor.execute("UPDATE pessoas SET nome = ? WHERE id = ?", (novo_nome, id_pessoa))
-            conexao.commit()
+            nome = pedir_nome("Digite o novo nome: ").title()
+            atualizar_pessoa(cursor, conexao, id_pessoa, nome, None)
             print("Alteração realizada com sucesso!")
-            print(f"ID: {resultado['id']} | Nome: {novo_nome} | Idade: {resultado['idade']}")
 
-        # === Alteração da idade ===
         elif opcao == "2":
-            nova_idade = pedir_inteiro("Digite a nova idade: ")
-            cursor.execute("UPDATE pessoas SET idade = ? WHERE id = ?", (nova_idade, id_pessoa))
-            conexao.commit()
+            idade = pedir_inteiro("Digite a nova idade: ")
+            atualizar_pessoa(cursor, conexao, id_pessoa, None, idade)
             print("Alteração realizada com sucesso!")
-            print(f"ID: {resultado['id']} | Nome: {resultado['nome']} | Idade: {nova_idade}")
 
-        # === Alteração de nome e idade ===
         elif opcao == "3":
-            novo_nome = input("Digite o novo nome: ")
-            nova_idade = pedir_inteiro("Digite a nova idade: ")
-            cursor.execute("UPDATE pessoas SET nome = ?, idade = ? WHERE id = ?", (novo_nome, nova_idade, id_pessoa))
-            conexao.commit()
+            nome = pedir_nome("Digite o novo nome: ").title()
+            idade = pedir_inteiro("Digite a nova idade: ")
+            atualizar_pessoa(cursor, conexao, id_pessoa, nome, idade)
             print("Alterações realizadas com sucesso!")
-            print(f"ID: {resultado['id']} | Nome: {novo_nome} | Idade: {nova_idade}")
 
         else:
             print("Opção inválida. Tente novamente")
-
     else:
         print("Pessoa não encontrada.")
 
-def excluir_pessoa():
+def excluir_pessoa(cursor, conexao):
     """Exclui uma pessoa do cadastro pelo ID."""
     id_pessoa = pedir_inteiro("Digite o ID da pessoa que deseja excluir: ")
-    cursor.execute("SELECT * FROM pessoas WHERE id = ?", (id_pessoa,))
-    resultado = cursor.fetchone()
+    resultado = buscar_pessoa_por_id(cursor, id_pessoa)
 
     if resultado is not None:
         print(f"ID: {resultado['id']} | Nome: {resultado['nome']} | Idade: {resultado['idade']}")
         opcao = input("Tem certeza que deseja excluir essa pessoa? (s/n): ").strip().lower()
 
         if opcao == "s":
-            cursor.execute("DELETE FROM pessoas WHERE id = ?", (id_pessoa,))
-            conexao.commit()
+            remover_pessoa(cursor, conexao, id_pessoa)
             print("Pessoa excluída com sucesso!")
+
         elif opcao == "n":
             print("Pessoa não excluída.")
+
         else:
             print("Opção inválida.")
     else:
@@ -125,7 +157,11 @@ def excluir_pessoa():
 
 def main():
     """Função principal que controla o menu do sistema."""
-    criar_tabela()
+    conexao = sqlite3.connect("cadastro.db")
+    conexao.row_factory = sqlite3.Row
+    cursor = conexao.cursor()
+    criar_tabela(cursor, conexao)
+
     while True:
         print("\n===== MENU =====")
         print("1 - Cadastrar Pessoa")
@@ -138,15 +174,15 @@ def main():
         opcao = input("Escolha uma opção: ")
 
         if opcao == "1":
-            cadastrar_pessoa()
+            cadastrar_pessoa(cursor, conexao)
         elif opcao == "2":
-            listar_pessoas()
+            listar_pessoas(cursor)
         elif opcao == "3":
-            pesquisar_pessoa()
+            pesquisar_pessoa(cursor)
         elif opcao == "4":
-            editar_pessoa()
+            editar_pessoa(cursor, conexao)
         elif opcao == "5":
-            excluir_pessoa()
+            excluir_pessoa(cursor, conexao)
         elif opcao == "6":
             print("Você saiu do sistema.")
             conexao.close()
